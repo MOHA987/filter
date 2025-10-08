@@ -1,71 +1,43 @@
-import os, re
+import os
 import telebot
+from telebot import types
 
-# ===== الإعدادات من المتغيرات البيئية (سنضبطها في Render لاحقًا) =====
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-# أحد الخيارين يكفي: إمّا آيدي القناة الخاصة أو يوزرنيم قناة عامة
-SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID")        # مثال: -1002304674709
-SOURCE_CHANNEL_USERNAME = os.getenv("SOURCE_CHANNEL_USERNAME")  # مثال: FilterZoneSignals (بدون @)
-TARGET_CHANNEL = os.getenv("TARGET_CHANNEL")              # مثال: @FilterZoneCrypto
+# ✅ قراءة المتغيرات من Environment Variables في Render
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+SOURCE_CHANNEL = os.getenv("SOURCE_CHANNEL")
+TARGET_CHANNEL = os.getenv("TARGET_CHANNEL")
 
-MIN_LIQ = float(os.getenv("MIN_LIQUIDITY", 3000))        # أقل سيولة مقبولة
-MAX_MC  = float(os.getenv("MAX_MARKETCAP", 350000))      # أعلى ماركت كاب
-MAX_AGE = int(os.getenv("MAX_AGE_MINUTES", 40))          # أقصى عمر بالدقائق
+# 🔒 فحص إذا المتغيرات ناقصة
+if not BOT_TOKEN:
+    raise Exception("❌ Bot token is not defined in environment variables.")
+if not SOURCE_CHANNEL or not TARGET_CHANNEL:
+    raise Exception("❌ SOURCE_CHANNEL or TARGET_CHANNEL is missing in environment variables.")
 
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
+# ✅ تهيئة البوت
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# ===== أدوات parsing للأرقام (تدعم K و M) =====
-def to_number(num_str, suffix=None):
-    n = float(num_str.replace(",", ""))
-    if suffix:
-        s = suffix.upper()
-        if s == "K": n *= 1_000
-        elif s == "M": n *= 1_000_000
-    return n
+print(f"🤖 Bot connected successfully!\n📡 Listening from {SOURCE_CHANNEL}\n➡️ Forwarding to {TARGET_CHANNEL}")
 
-def extract_fields(text):
-    # Market Cap: $156,723 أو $49.4K أو $1.2M
-    m_mc = re.search(r"Market\s*Cap[:\s]*\$?([\d.,]+)\s*([kKmM])?", text, re.I)
-    m_liq = re.search(r"Liquidity[:\s]*\$?([\d.,]+)\s*([kKmM])?", text, re.I)
-    m_age = re.search(r"Age[:\s]*([0-9]+)\s*m", text, re.I)
+# ✅ دالة الفلترة – يمكن تعديلها لاحقًا حسب شروطك
+def is_valid_message(text):
+    if "Liquidity" in text or "Market Cap" in text:
+        return True
+    return False
 
-    mc  = to_number(m_mc.group(1), m_mc.group(2)) if m_mc else 0
-    liq = to_number(m_liq.group(1), m_liq.group(2)) if m_liq else 0
-    age = int(m_age.group(1)) if m_age else 9999
-    return mc, liq, age
+# ✅ استماع للرسائل الجديدة
+@bot.channel_post_handler(func=lambda message: True)
+def forward_message(message):
+    try:
+        if message.chat.username == SOURCE_CHANNEL.replace("@", ""):
+            text = message.text or ""
+            if is_valid_message(text):
+                bot.send_message(TARGET_CHANNEL, f"🚀 Filtered Message:\n\n{text}")
+                print(f"✅ Forwarded message: {text[:50]}...")
+            else:
+                print(f"⚠️ Message ignored: {text[:50]}...")
+    except Exception as e:
+        print(f"❌ Error forwarding message: {e}")
 
-def is_from_source(chat):
-    # قبول إمّا بالمُعرّف الرقمي أو باليوزرنيم
-    ok_id = False
-    if SOURCE_CHANNEL_ID:
-        try:
-            ok_id = (chat.id == int(SOURCE_CHANNEL_ID))
-        except:
-            ok_id = False
-    ok_username = False
-    if SOURCE_CHANNEL_USERNAME and chat.username:
-        ok_username = (chat.username.lower() == SOURCE_CHANNEL_USERNAME.lower().lstrip("@"))
-    return ok_id or ok_username
-
-# ===== الاستماع لرسائل القنوات =====
-@bot.channel_post_handler(func=lambda m: True)
-def handle_channel_post(message):
-    if not is_from_source(message.chat):
-        return
-
-    text = (message.text or message.caption or "")
-    mc, liq, age = extract_fields(text)
-
-    if liq >= MIN_LIQ and mc <= MAX_MC and age <= MAX_AGE:
-        out = (
-            "✅ <b>Filtered Coin</b>\n"
-            f"{text}\n\n"
-            f"<i>mc={int(mc)}, liq={int(liq)}, age={age}m</i>"
-        )
-        bot.send_message(TARGET_CHANNEL, out)
-        print(f"✅ sent | mc={mc} liq={liq} age={age}")
-    else:
-        print(f"❌ skip | mc={mc} liq={liq} age={age}")
-
-print("🤖 Bot is running…")
+# ✅ تشغيل البوت
+print("🔄 Bot is now running...")
 bot.infinity_polling(skip_pending=True)

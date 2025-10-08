@@ -1,23 +1,16 @@
 services:
-  - type: worker
-    name: crypto-filter-bot
+  - type: web
+    name: filterbot
     env: python
+    plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python main.py"
-    autoDeploy: true
     envVars:
-      - key: TELEGRAM_TOKEN
-        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        value: your_bot_token_here
       - key: SOURCE_CHANNEL_ID
-        sync: false
-      - key: TARGET_CHANNEL
-        sync: false
-      - key: MIN_LIQUIDITY
-        sync: false
-      - key: MAX_MARKETCAP
-        sync: false
-      - key: MAX_AGE_MINUTES
-        sync: false
-envVars:
-  - key: PORT
-    value: 10000
+        value: your_source_channel_id_here
+      - key: DEST_CHANNEL_ID
+        value: your_destination_channel_id_here
+      - key: PORT
+        value: 10000
